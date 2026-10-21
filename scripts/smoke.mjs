@@ -7,7 +7,10 @@ import net from 'node:net';
 import http from 'node:http';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import sharp from 'sharp';
+// libvips bundled with Sharp sets VIPSHOME during initialization. Keep the
+// caller's environment for Pixerve, which uses a separate native installation.
+const serverEnvironment = { ...process.env };
+const { default: sharp } = await import('sharp');
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const target = path.join(root, 'target');
@@ -24,6 +27,8 @@ const keys = ['w', 'h', 'q', 'bl', 'bg', 'f', 'fit', 'fo'];
 let server;
 let origin;
 let logs = '';
+let serverExit;
+let serverClosed;
 let checks = 0;
 let s3Mock;
 const pass = () => { checks++; };
@@ -39,7 +44,7 @@ async function start(extra = {}) {
   server = spawn(executable, [], {
     cwd: fixture, windowsHide: true,
     env: {
-      ...process.env, PORT: String(port), SOURCE_DIR: input,
+      ...serverEnvironment, PORT: String(port), SOURCE_DIR: input,
       STATIC_DIR: staticInput, OG_WATERMARK: path.resolve(root, 'assets/og_wm.png'),
       DISK_CACHE_DIR: path.join(fixture, 'cache'), DISK_CACHE_MB: '16', MEM_CACHE_MB: '2',
       CACHE_TTL: '300', CACHE_IDLE_SECS: '300', MAX_CONCURRENT: '1', MAX_QUEUE: '4', MAX_REQUESTS: '64',
@@ -54,11 +59,17 @@ async function start(extra = {}) {
   });
   server.stdout.on('data', b => { logs += b; });
   server.stderr.on('data', b => { logs += b; });
+  serverExit = new Promise(resolve => {
+    server.once('exit', (code, signal) => resolve({ code, signal }));
+  });
+  serverClosed = new Promise(resolve => server.once('close', resolve));
   let launchError;
   server.on('error', e => { launchError = e; });
   for (let i = 0; i < 150; i++) {
     if (launchError) throw launchError;
-    if (server.exitCode !== null) throw new Error(`Server exited ${server.exitCode}: ${logs}`);
+    if (server.exitCode !== null || server.signalCode !== null) {
+      throw new Error(`Server exited: code=${server.exitCode}, signal=${server.signalCode}; ${logs}`);
+    }
     try { if ((await fetch(`${origin}/health`)).ok) return; } catch {}
     await new Promise(r => setTimeout(r, 100));
   }
@@ -66,10 +77,9 @@ async function start(extra = {}) {
 }
 
 async function stop() {
-  if (!server || server.exitCode !== null) return;
-  const exited = once(server, 'exit');
-  server.kill();
-  await exited;
+  if (!server) return;
+  if (server.exitCode === null && server.signalCode === null) server.kill();
+  await serverClosed;
 }
 
 function signed(file, params, token = false) {
@@ -83,9 +93,18 @@ function signed(file, params, token = false) {
 }
 
 async function image(url, expected, headers = {}) {
-  const response = await fetch(origin + url, { headers });
-  assert.equal(response.status, 200, `${url}: ${await (response.ok ? Promise.resolve('') : response.text())}; ${logs}`);
-  const bytes = Buffer.from(await response.arrayBuffer());
+  let response;
+  let bytes;
+  try {
+    response = await fetch(origin + url, { headers });
+    bytes = Buffer.from(await response.arrayBuffer());
+  } catch (cause) {
+    // Allow the child exit event and its last diagnostics to reach Node.
+    const exited = await Promise.race([serverExit, new Promise(resolve => setTimeout(resolve, 250))]);
+    if (exited) await serverClosed;
+    throw new Error(`Image request failed: ${url}; server code=${server.exitCode}, signal=${server.signalCode}; ${logs}`, { cause });
+  }
+  assert.equal(response.status, 200, `${url}: ${response.ok ? '' : bytes.toString()}; ${logs}`);
   const metadata = await sharp(bytes).metadata();
   for (const [key, value] of Object.entries(expected)) assert.equal(metadata[key], value, `${url}: ${key}`);
   assert.match(response.headers.get('etag'), /^W\/"[a-f0-9]+"$/);
@@ -107,6 +126,7 @@ try {
   assert.deepEqual(Buffer.from(await raw.arrayBuffer()), await readFile(path.join(input, 'photo.jpg'))); pass();
 
   for (const f of ['jpeg', 'png', 'webp', 'avif']) {
+    console.log(`Checking native ${f} encoding...`);
     const encoded = await image(signed('photo.jpg', { w: 320, h: 180, f, q: 70 }), { width: 320, height: 180, format: f === 'avif' ? 'heif' : f });
     if (f === 'avif') {
       assert.equal(encoded.bytes.toString('ascii', 4, 8), 'ftyp');
