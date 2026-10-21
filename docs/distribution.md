@@ -20,9 +20,9 @@ The packager reads the version from Cargo.toml and creates:
 
 ```text
 dist/
-  pixerve-v0.1.0-windows-x64/
-  pixerve-v0.1.0-windows-x64.zip
-  pixerve-v0.1.0-windows-x64.zip.sha256
+  pixerve-v0.1.1-windows-x64/
+  pixerve-v0.1.1-windows-x64.zip
+  pixerve-v0.1.1-windows-x64.zip.sha256
 ```
 
 Use `-Binary` for another release executable or `-OutputDir` for a different
@@ -53,7 +53,7 @@ with your own artwork to add visible branding.
 ## Validate an extracted package
 
 ```powershell
-node scripts/check-package.mjs 'C:\downloads\pixerve-v0.1.0-windows-x64'
+node scripts/check-package.mjs 'C:\downloads\pixerve-v0.1.1-windows-x64'
 ```
 
 The checker verifies manifest hashes, launches the packaged executable with only
@@ -118,7 +118,7 @@ and the Docker build context resolve from the standalone repository root.
    creating the release tag. Keep Cargo.toml/Cargo.lock versioning aligned with
    the version being released.
 2. Create and publish a GitHub Release using `vMAJOR.MINOR.PATCH` (for example,
-   `v0.1.0`) or the equivalent unprefixed version. Pre-release suffixes such as
+   `v0.1.1`) or the equivalent unprefixed version. Pre-release suffixes such as
    `v0.2.0-rc.1` are supported. Build metadata (`+build`) is rejected because it
    is not a Docker tag character. Drafts and tag pushes alone do not publish.
 3. The workflow runs Windows and Linux checks. The Linux job builds, tests, and
@@ -127,11 +127,11 @@ and the Docker build context resolve from the standalone repository root.
    that workflow run, verifies its SHA-256, loads it, and pushes version tags.
    The publisher does not rebuild an untested image.
 
-For `xviidev/pixerve`, a stable `v0.1.0` release publishes:
+For `xviidev/pixerve`, a stable `v0.1.1` release publishes:
 
 ```text
-ghcr.io/xviidev/pixerve:v0.1.0
-ghcr.io/xviidev/pixerve:0.1.0
+ghcr.io/xviidev/pixerve:v0.1.1
+ghcr.io/xviidev/pixerve:0.1.1
 ghcr.io/xviidev/pixerve:latest
 ```
 
@@ -143,8 +143,8 @@ derived from the GitHub repository and lowercased, so forks use their own GHCR p
 Once publication succeeds:
 
 ```sh
-docker pull ghcr.io/xviidev/pixerve:v0.1.0
-docker run --rm -p 127.0.0.1:3000:3000 ghcr.io/xviidev/pixerve:v0.1.0
+docker pull ghcr.io/xviidev/pixerve:v0.1.1
+docker run --rm -p 127.0.0.1:3000:3000 ghcr.io/xviidev/pixerve:v0.1.1
 ```
 
 No custom registry token is required for the workflow. Repository/package policy
