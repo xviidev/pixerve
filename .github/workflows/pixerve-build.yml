@@ -1,0 +1,114 @@
+name: Pixerve portable and Docker builds
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    runs-on: windows-2022
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install pinned Rust toolchain
+        run: |
+          rustup toolchain install 1.92.0 --profile minimal --component rustfmt
+          rustup override set 1.92.0
+      - name: Install verified libvips SDK
+        run: |
+          $archive = Join-Path $env:RUNNER_TEMP 'vips.zip'
+          Invoke-WebRequest 'https://github.com/libvips/build-win64-mxe/releases/download/v8.18.2/vips-dev-x64-web-8.18.2.zip' -OutFile $archive
+          $expected = '08effbafe12c6700345882b011cefeb41bcb305b959f5c0812a56cd1b0ddb752'
+          if ((Get-FileHash $archive -Algorithm SHA256).Hash.ToLowerInvariant() -ne $expected) { throw 'SDK checksum mismatch' }
+          $destination = Join-Path $env:RUNNER_TEMP 'vips'
+          Expand-Archive -LiteralPath $archive -DestinationPath $destination
+          $dll = @(Get-ChildItem $destination -Recurse -Filter libvips-42.dll)
+          if ($dll.Count -ne 1) { throw 'Expected one libvips runtime' }
+          $sdk = Split-Path -Parent (Split-Path -Parent $dll[0].FullName)
+          "VIPS_SDK=$sdk" >> $env:GITHUB_ENV
+          "VIPS_LIB_DIR=$sdk/lib" >> $env:GITHUB_ENV
+          "$sdk/bin" >> $env:GITHUB_PATH
+      - name: Format and Rust tests
+        run: |
+          cargo fmt --check
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          cargo test --locked -j 2
+      - name: Build and test release
+        run: |
+          cargo build --release --locked -j 2
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          npm ci
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          node scripts/smoke.mjs
+      - name: Package and test extracted ZIP without SDK paths
+        run: |
+          ./scripts/package-windows.ps1 -VipsDir $env:VIPS_SDK
+          $zip = Get-ChildItem dist -Filter '*.zip' | Select-Object -First 1
+          $unpacked = Join-Path $env:RUNNER_TEMP 'pixerve-unpacked'
+          Expand-Archive -LiteralPath $zip.FullName -DestinationPath $unpacked
+          $package = (Get-ChildItem $unpacked -Directory | Select-Object -First 1).FullName
+          node scripts/check-package.mjs $package
+      - uses: actions/upload-artifact@v7
+        with:
+          name: pixerve-windows-x64
+          path: |
+            dist/*.zip
+            dist/*.sha256
+          if-no-files-found: error
+
+  linux:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install native build dependencies
+        run: sudo apt-get update && sudo apt-get install -y libvips-dev pkg-config build-essential
+      - name: Install pinned Rust toolchain
+        run: |
+          rustup toolchain install 1.92.0 --profile minimal --component rustfmt
+          rustup override set 1.92.0
+      - name: Test native Linux release
+        run: |
+          cargo fmt --check
+          cargo test --locked -j 2
+          cargo build --release --locked -j 2
+          npm ci
+          node scripts/smoke.mjs
+      - name: Build and inspect Linux x64 container
+        run: |
+          docker build --platform linux/amd64 -f Dockerfile -t pixerve:ci .
+          docker run -d --name pixerve-ci -p 127.0.0.1:3000:3000 -e OPEN_RPS=100 -e OPEN_ALLOWED_FORMATS=avif,webp,jpeg,png pixerve:ci
+          trap 'docker logs pixerve-ci; docker rm -f pixerve-ci' EXIT
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:3000/health; then break; fi
+            sleep 1
+          done
+          for format in jpeg png webp avif; do
+            curl --fail --location --max-time 30 "http://127.0.0.1:3000/example.png?w=320&f=$format" --output "/tmp/pixerve.$format"
+            test -s "/tmp/pixerve.$format"
+          done
+          curl --fail --max-time 30 http://127.0.0.1:3000/og/example.png --output /tmp/pixerve-og.jpg
+          test "$(docker inspect --format '{{.Config.User}}' pixerve-ci)" = pixerve
+          docker save pixerve:ci | gzip > pixerve-linux-amd64-docker.tar.gz
+          sha256sum pixerve-linux-amd64-docker.tar.gz > pixerve-linux-amd64-docker.tar.gz.sha256
+      - uses: actions/upload-artifact@v7
+        with:
+          name: pixerve-linux-amd64-docker
+          path: |
+            pixerve-linux-amd64-docker.tar.gz
+            pixerve-linux-amd64-docker.tar.gz.sha256
+          if-no-files-found: error

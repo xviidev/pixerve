@@ -1,0 +1,14 @@
+{
+  "name": "pixerve-dev",
+  "private": true,
+  "description": "Development-only HTTP fixtures and checks for Pixerve",
+  "scripts": {
+    "test:http": "node scripts/smoke.mjs"
+  },
+  "devDependencies": {
+    "sharp": "0.33.5"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

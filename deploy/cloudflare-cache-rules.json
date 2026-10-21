@@ -1,0 +1,34 @@
+{
+  "name": "pixerve cache policy",
+  "kind": "zone",
+  "phase": "http_request_cache_settings",
+  "rules": [
+    {
+      "description": "pixerve: origin cache policy and normalized image variants",
+      "expression": "(http.host eq \"img.example.com\" and http.request.method in {\"GET\" \"HEAD\"})",
+      "action": "set_cache_settings",
+      "action_parameters": {
+        "cache": true,
+        "edge_ttl": { "mode": "bypass_by_default" },
+        "browser_ttl": { "mode": "respect_origin" },
+        "vary": {
+          "default": { "action": "bypass" },
+          "headers": {
+            "accept": {
+              "action": "normalize",
+              "media_types": ["image/avif", "image/webp", "image/jpeg"]
+            }
+          }
+        }
+      },
+      "enabled": true
+    },
+    {
+      "description": "pixerve: bypass administrative and authenticated requests",
+      "expression": "(http.host eq \"img.example.com\" and (http.request.uri.path in {\"/health\" \"/metrics\"} or any(http.request.headers[\"authorization\"][*] ne \"\")))",
+      "action": "set_cache_settings",
+      "action_parameters": { "cache": false },
+      "enabled": true
+    }
+  ]
+}

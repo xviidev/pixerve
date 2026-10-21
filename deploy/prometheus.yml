@@ -1,0 +1,11 @@
+# Replace hostname and mount a separate file containing only the bearer token.
+scrape_configs:
+  - job_name: pixerve
+    scheme: https
+    metrics_path: /metrics
+    scrape_interval: 30s
+    authorization:
+      type: Bearer
+      credentials_file: /etc/prometheus/secrets/pixerve-token
+    static_configs:
+      - targets: ["img.example.com"]
