@@ -13,6 +13,7 @@ SVG/vector files or an ICO favicon bundle.
 | Original horizontal logo | `branding/pixerve-logo.png` | 2172 × 724 | Logo lockup on light surfaces; transparent |
 | Default OG | `static/default-og.png` | 1730 × 909 | Default page/link preview, opaque navy background |
 | README cover | `static/readme-cover.png` | 2172 × 724 | Light hero banner, already used in the project README |
+| Favicon | `static/favicon.ico` | 16, 32, 48, 256 px | Local browser icon served at `/favicon.ico` |
 | Icon master | `static/pixerve-icon.png` | 1254 × 1254 | Avatar/app icon source; transparent |
 | Placeholder | `static/placeholder.png` | 1672 × 940 | Explicit image-unavailable fallback |
 
@@ -92,3 +93,6 @@ original Pixerve logo as a reference. Prompts are recorded in
 `branding/asset-prompts.md` in the source checkout. Keep filenames/versioned
 publication URLs distinct when replacing artwork; follow the content-hash and
 pipeline policy in [CDN delivery](../CDN.md) for long-lived cached assets.
+
+Regenerate the favicon from `static/pixerve-icon.png` with `node scripts/generate-favicon.mjs`.
+The favicon route stays local in S3 mode and returns `404` if its local file is absent.

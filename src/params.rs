@@ -17,6 +17,33 @@ pub struct Transforms {
     pub fo: Option<String>,
 }
 
+#[derive(Clone, Copy, Debug)]
+pub enum PolicyError {
+    OutputPixels,
+    OpenDimensions,
+    OpenBlur,
+    OpenFormat,
+}
+
+impl PolicyError {
+    pub fn message(self) -> &'static str {
+        match self {
+            Self::OutputPixels => "Output pixel limit exceeded",
+            Self::OpenDimensions => "Unsigned image dimensions exceed configured limits",
+            Self::OpenBlur => "Unsigned image blur exceeds configured limit",
+            Self::OpenFormat => "Output format is not allowed for unsigned requests",
+        }
+    }
+}
+
+impl std::fmt::Display for PolicyError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.message())
+    }
+}
+
+impl std::error::Error for PolicyError {}
+
 pub const KEYS: [&str; 8] = ["w", "h", "q", "bl", "bg", "f", "fit", "fo"];
 pub const PRESETS: [&str; 5] = ["thumbnail", "card", "article", "wide", "og"];
 
@@ -235,24 +262,29 @@ impl Transforms {
         .into()
     }
 
-    pub fn policy(&self, c: &Config, format: &str, open: bool) -> Result<()> {
+    pub fn policy(
+        &self,
+        c: &Config,
+        format: &str,
+        open: bool,
+    ) -> std::result::Result<(), PolicyError> {
         let mp = f64::from(self.w.unwrap_or(0)) * f64::from(self.h.unwrap_or(0)) / 1_000_000.0;
-        ensure!(mp <= c.mp_limit, "Output too large");
+        if mp > c.mp_limit {
+            return Err(PolicyError::OutputPixels);
+        }
         if open {
-            ensure!(
-                self.w.is_none_or(|v| v <= c.open_max_w)
-                    && self.h.is_none_or(|v| v <= c.open_max_h)
-                    && mp <= c.open_max_mp,
-                "Open dimensions exceeded"
-            );
-            ensure!(
-                self.bl.is_none_or(|v| v <= c.open_max_blur),
-                "Open blur exceeded"
-            );
-            ensure!(
-                c.open_formats.iter().any(|s| s == format),
-                "Open format disallowed"
-            );
+            if self.w.is_some_and(|v| v > c.open_max_w)
+                || self.h.is_some_and(|v| v > c.open_max_h)
+                || mp > c.open_max_mp
+            {
+                return Err(PolicyError::OpenDimensions);
+            }
+            if self.bl.is_some_and(|v| v > c.open_max_blur) {
+                return Err(PolicyError::OpenBlur);
+            }
+            if !c.open_formats.iter().any(|s| s == format) {
+                return Err(PolicyError::OpenFormat);
+            }
         }
         Ok(())
     }

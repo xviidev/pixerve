@@ -40,10 +40,10 @@ Branch/PR builds only produce workflow artifacts. See the
 [release publishing guide](docs/distribution.md#publish-a-release-image-to-ghcr).
 A published registry image is not assumed until that workflow succeeds.
 
-Local validation has passed **10 Rust tests and 137 HTTP/image checks** on Windows
-with Rust 1.92 and libvips 8.18.2, including the release executable. Docker/Linux
-and live CDN rules have not yet been validated. Comparative CPU/RAM benchmarks
-have not been performed; resource defaults are controls, not performance claims.
+Latest local validation passed **10 Rust tests and 149 HTTP/image checks** on Windows
+with Rust 1.92 and libvips 8.18.2 using the debug executable. Release and Linux
+checks run in GitHub Actions. Live CDN rules and comparative CPU/RAM benchmarks
+have not been validated; resource defaults are controls, not performance claims.
 
 ## Quick start
 

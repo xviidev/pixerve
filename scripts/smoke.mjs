@@ -53,7 +53,8 @@ async function start(extra = {}) {
       PIPELINE_VERSION:'1', CACHE_VISIBILITY:'public', CANONICAL_REDIRECTS:'true', PRESETS_ONLY:'false',
       ORIGIN_TOKEN:'',
       METRICS_TOKEN:'smoke-metrics-token-secret', BROWSER_CACHE_TTL:'300', CDN_CACHE_TTL:'86400',
-      IMMUTABLE_CACHE_TTL:'31536000', STALE_WHILE_REVALIDATE:'60', STALE_IF_ERROR:'86400', OPEN_MAX_W:'1280',
+      IMMUTABLE_CACHE_TTL:'31536000', STALE_WHILE_REVALIDATE:'60', STALE_IF_ERROR:'86400', OPEN_MAX_W:'1280', OPEN_MAX_H:'1200', OPEN_MAX_MP:'3', OPEN_MAX_BLUR:'10',
+      OPEN_ALLOWED_FORMATS:'avif,webp,jpeg',
       ...extra,
     }, stdio: ['ignore', 'pipe', 'pipe'],
   });
@@ -110,6 +111,14 @@ async function image(url, expected, headers = {}) {
   assert.match(response.headers.get('etag'), /^W\/"[a-f0-9]+"$/);
   pass();
   return { response, bytes, metadata };
+}
+
+async function policyError(url, status, message) {
+  const response = await fetch(origin + url);
+  assert.equal(response.status, status, url);
+  assert.equal(await response.text(), message, url);
+  assert.equal(response.headers.get('cache-control'), 'no-store', url);
+  pass();
 }
 
 try {
@@ -312,6 +321,18 @@ try {
   await originAllowed.arrayBuffer();pass();
   assert.equal((await fetch(origin+'/metrics',{headers:metricsHeaders})).status,404);pass();
   await stop();
+  await writeFile(path.join(input, 'policy-photo.jpg'), sourceBytes);
+  await start({ SIGNING_KEY: '', OPEN_RPS: '100' });
+  await policyError('/alpha.png?f=png', 403, 'Output format is not allowed for unsigned requests');
+  await policyError('/alpha.png?w=1281', 413, 'Unsigned image dimensions exceed configured limits');
+  await policyError('/alpha.png?bl=11', 413, 'Unsigned image blur exceeds configured limit');
+  await policyError('/policy-photo.jpg?f=webp', 413, 'Unsigned image dimensions exceed configured limits');
+  await stop();
+  await start({ SIGNING_KEY: '', OPEN_RPS: '100', MP_LIMIT: '1', OPEN_ALLOWED_FORMATS: 'avif,webp,jpeg,png' });
+  await policyError('/policy-photo.jpg?w=1200&h=1000', 413, 'Output pixel limit exceeded');
+  await policyError('/policy-photo.jpg?f=webp', 413, 'Output pixel limit exceeded');
+  await image('/alpha.png?w=100&f=png', { width: 100, format: 'png' });
+  await stop();
   await start({ SIGNING_KEY: '', OPEN_RPS: '5', OPEN_WINDOW: '60' });
   assert.equal((await fetch(origin + '/alpha.png?w=1281')).status, 413); pass();
   assert.equal((await fetch(origin + '/alpha.png?w=100')).status, 200); pass();
@@ -345,6 +366,33 @@ try {
   s3Mock.listen(0, '127.0.0.1');
   await once(s3Mock, 'listening');
   await start({ SOURCE_DIR: '', S3_ENDPOINT: `http://127.0.0.1:${s3Mock.address().port}`, S3_BUCKET: 'smoke-bucket', S3_ACCESS_KEY_ID: 'test-key', S3_ACCESS_KEY_SECRET: 'test-secret', S3_REGION: 'auto' });
+  // Favicon requests must stay local even when the main source is S3.
+  const missingIcon = await fetch(origin + '/favicon.ico', { redirect: 'manual' });
+  assert.equal(missingIcon.status, 404);
+  assert.equal(s3Calls, 0, 'Missing local favicon must not fall back to S3'); pass();
+  const iconBytes = await readFile(path.join(root, 'static/favicon.ico'));
+  assert.deepEqual([...iconBytes.subarray(0, 6)], [0, 0, 1, 0, 4, 0]);
+  for (let i = 0; i < 4; i++) {
+    const entry = 6 + i * 16;
+    const length = iconBytes.readUInt32LE(entry + 8);
+    const offset = iconBytes.readUInt32LE(entry + 12);
+    const frame = await sharp(iconBytes.subarray(offset, offset + length)).metadata();
+    const size = [16, 32, 48, 256][i];
+    assert.equal(frame.width, size); assert.equal(frame.height, size);
+  }
+  await writeFile(path.join(staticInput, 'favicon.ico'), iconBytes);
+  const icon = await fetch(origin + '/favicon.ico', { redirect: 'manual' });
+  assert.equal(icon.status, 200);
+  assert.match(icon.headers.get('content-type'), /^image\/(?:x-icon|vnd.microsoft.icon)$/);
+  assert.deepEqual(Buffer.from(await icon.arrayBuffer()), iconBytes);
+  assert.equal(s3Calls, 0, 'Favicon must never read S3'); pass();
+  const iconHead = await fetch(origin + '/favicon.ico', { method: 'HEAD', redirect: 'manual' });
+  assert.equal(iconHead.status, 200); assert.equal((await iconHead.arrayBuffer()).byteLength, 0); pass();
+  const iconCached = await fetch(origin + '/favicon.ico', { headers: { 'If-None-Match': icon.headers.get('etag') } });
+  assert.equal(iconCached.status, 304); assert.equal((await iconCached.arrayBuffer()).byteLength, 0); pass();
+  const rawIcon = await fetch(origin + '/favicon.ico?f=png', { redirect: 'manual' });
+  assert.equal(rawIcon.status, 200); assert.deepEqual(Buffer.from(await rawIcon.arrayBuffer()), iconBytes);
+  assert.equal(s3Calls, 0, 'Favicon query parameters must not select S3 or transform the icon'); pass();
   const burst = await Promise.all(Array.from({ length: 16 }, () => fetch(origin + signed('coalesced.jpg', { w: 200, f: 'webp' }))));
   assert.ok(burst.every(r => r.status === 200));
   await Promise.all(burst.map(r => r.arrayBuffer()));

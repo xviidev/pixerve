@@ -20,6 +20,15 @@ use std::{
     time::{Duration, Instant},
 };
 
+fn policy_failure(error: params::PolicyError) -> Failure {
+    let status = if matches!(error, params::PolicyError::OpenFormat) {
+        StatusCode::FORBIDDEN
+    } else {
+        StatusCode::PAYLOAD_TOO_LARGE
+    };
+    Failure(status, error.message())
+}
+
 pub async fn handle(
     State(app): State<Arc<App>>,
     ConnectInfo(peer): ConnectInfo<SocketAddr>,
@@ -53,14 +62,19 @@ pub async fn handle(
             ));
         }
     }
-    let static_file = path.starts_with("static/");
+    let favicon = path == "favicon.ico";
+    let static_file = favicon || path.starts_with("static/");
     let og = path.starts_with("og/");
     let token = path.starts_with("tr:");
     let query_transform =
         params::KEYS.iter().any(|k| query.contains_key(*k)) || query.contains_key("p");
     let (file, t, mut auth, transform) = if static_file {
         (
-            path[7..].to_owned(),
+            if favicon {
+                path.clone()
+            } else {
+                path[7..].to_owned()
+            },
             Transforms::default(),
             HashMap::new(),
             false,
@@ -140,6 +154,7 @@ pub async fn handle(
         if open { &no_auth } else { &auth },
     );
     if app.config.cdn.redirects
+        && !favicon
         && uri
             .path_and_query()
             .is_some_and(|u| u.as_str() != canonical)
@@ -183,7 +198,7 @@ pub async fn handle(
     };
     if transform {
         t.policy(&app.config, &format, open && !og)
-            .map_err(|_| Failure(StatusCode::PAYLOAD_TOO_LARGE, "Transform limit exceeded"))?;
+            .map_err(policy_failure)?;
         if app.config.cdn.presets_only && !og && !t.is_preset() {
             return Err(Failure(StatusCode::BAD_REQUEST, "Use a supported preset"));
         }
@@ -299,7 +314,9 @@ pub async fn handle(
                         let bytes = result.map_err(|e| {
                             metrics::inc(&app.stats.transform_errors);
                             tracing::warn!(error=%e,"Transform failed");
-                            if e.to_string().contains("limit")
+                            if let Some(error) = e.downcast_ref::<params::PolicyError>() {
+                                policy_failure(*error)
+                            } else if e.to_string().contains("limit")
                                 || e.to_string().contains("dimensions exceeded")
                             {
                                 Failure(StatusCode::PAYLOAD_TOO_LARGE, "Image limit exceeded")

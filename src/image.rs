@@ -1,4 +1,7 @@
-use crate::{config::Config, params::Transforms};
+use crate::{
+    config::Config,
+    params::{PolicyError, Transforms},
+};
 use anyhow::{Result, ensure};
 use bytes::Bytes;
 use rs_vips::{
@@ -150,17 +153,16 @@ pub fn transform(
         header.autorot()?
     };
     let (ow, oh) = (image.get_width() as u64, image.get_height() as u64);
-    ensure!(
-        (ow * oh) as f64 <= c.mp_limit * 1_000_000.0,
-        "Output pixel limit exceeded"
-    );
+    if (ow * oh) as f64 > c.mp_limit * 1_000_000.0 {
+        return Err(PolicyError::OutputPixels.into());
+    }
     if open && !og {
-        ensure!(
-            ow <= c.open_max_w as u64
-                && oh <= c.open_max_h as u64
-                && (ow * oh) as f64 <= c.open_max_mp * 1_000_000.0,
-            "Open output dimensions exceeded"
-        );
+        if ow > c.open_max_w as u64
+            || oh > c.open_max_h as u64
+            || (ow * oh) as f64 > c.open_max_mp * 1_000_000.0
+        {
+            return Err(PolicyError::OpenDimensions.into());
+        }
     }
     if let Some(sigma) = t.bl {
         image = image.gaussblur(sigma)?;

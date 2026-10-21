@@ -49,8 +49,9 @@ Set `PIXERVE_BIN` to an absolute executable path to test a different build. With
 it, the suite runs `target/release/pixerve` (`.exe` on Windows). It uses temporary
 sources and test credentials rather than production storage.
 
-Recorded validation: 10 Rust tests and 137 HTTP/image checks passed on Windows
-with Rust 1.92 and libvips 8.18.2. Docker/Linux and live-CDN validation are pending.
+Recorded validation: 10 Rust tests and 149 HTTP/image checks passed on Windows
+with Rust 1.92 and libvips 8.18.2 using the debug executable. Release and Linux
+checks run in GitHub Actions; live-CDN validation remains separate.
 Re-run relevant checks after implementation changes; documentation-only edits
 need reference/example validation rather than another native release build.
 

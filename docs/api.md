@@ -17,8 +17,9 @@ see [signing](signing.md) for when they are required.
 | `/tr:f-webp,w-640,q-75/<key>` | Path-token transformation |
 | `/og/<key>` | Fixed social JPEG with watermark from the main source |
 | `/static/<key>` | Original bytes from local `STATIC_DIR` |
+| `/favicon.ico` | Local `STATIC_DIR/favicon.ico`; no redirect, transformation, or S3 fallback |
 
-`og/`, `static/`, and `tr:` are reserved prefixes. On `/og/` and `/static/`, query
+`og/`, `static/`, and `tr:` are reserved prefixes; `/favicon.ico` is a reserved local asset route. On `/og/` and `/static/`, query
 transform options do not override fixed route behavior. On `/tr:` routes,
 transform settings come from path tokens; query transform fields do not override
 them. Authentication and `pv` can still come from the query. Keys are relative paths.
@@ -142,7 +143,7 @@ loading/encoding on a cold cache. The weak ETag is not a cryptographic fingerpri
 | `304` | Conditional image match |
 | `308` | Follow canonical `Location` |
 | `400` | Invalid path/transform/query, duplicate fields, preset mismatch, or mixed signature types |
-| `403` | Required signature/origin token missing, invalid, expired, or disallowed |
+| `403` | Required signature/origin token missing, invalid, expired, or disallowed; output format forbidden by unsigned-request policy |
 | `404` | Source absent, or metrics disabled/unauthorized |
 | `405` | Unsupported method |
 | `409` | Source does not match hash in its filename |
@@ -158,3 +159,18 @@ loading/encoding on a cold cache. The weak ETag is not a cryptographic fingerpri
 Application image errors have short plain-text bodies and `no-store`. Framework
 responses such as `405` may lack that header; bypass responses without explicit
 cache permission at the CDN.
+
+### Transform policy errors
+
+Policy rejections have distinct plain-text bodies and `Cache-Control: no-store`:
+
+| Status | Body | Setting |
+|---|---|---|
+| `403` | `Output format is not allowed for unsigned requests` | `OPEN_ALLOWED_FORMATS` |
+| `413` | `Unsigned image dimensions exceed configured limits` | `OPEN_MAX_W`, `OPEN_MAX_H`, `OPEN_MAX_MP` |
+| `413` | `Unsigned image blur exceeds configured limit` | `OPEN_MAX_BLUR` |
+| `413` | `Output pixel limit exceeded` | `MP_LIMIT` |
+
+Dimension and pixel checks also apply to the actual decoded output when a requested
+width or height is omitted. PNG is supported; to allow it for unsigned requests,
+include `png` in `OPEN_ALLOWED_FORMATS`. Signed transforms use the general limits.
