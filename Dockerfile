@@ -8,7 +8,7 @@ COPY src ./src
 RUN cargo build --release --locked
 
 FROM debian:bookworm-slim
-RUN apt-get update && apt-get install -y --no-install-recommends libvips42 ca-certificates wget && rm -rf /var/lib/apt/lists/* \
+RUN apt-get update && apt-get install -y --no-install-recommends libvips42 libheif1 libaom3 libdav1d6 ca-certificates wget && rm -rf /var/lib/apt/lists/* \
     && groupadd --gid 10001 pixerve && useradd --uid 10001 --gid pixerve --no-create-home pixerve
 WORKDIR /app
 COPY --from=build /build/target/release/pixerve /usr/local/bin/pixerve

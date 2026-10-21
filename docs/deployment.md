@@ -52,7 +52,8 @@ docker run --rm --name pixerve \
 The runtime uses UID/GID 10001; bind-mounted cache directories must be writable
 by that user. The health check polls `/health`; unlike the application, this
 configured external check does generate periodic idle requests. The image runs
-the `pixerve` executable. No prebuilt registry image is currently documented as published.
+the `pixerve` executable. Published GitHub Releases can publish tested images to
+GHCR; see the [release workflow](distribution.md#publish-a-release-image-to-ghcr).
 Docker/Linux validation remains pending. The [distribution guide](distribution.md)
 describes the supplied CI workflow and Windows portable packager.
 

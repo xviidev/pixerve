@@ -5,7 +5,8 @@
 Pixerve's initial distribution targets are Windows x64 portable ZIPs and Linux
 x64 Docker images. These include native runtime dependencies so end users do not
 need a Rust compiler or libvips development SDK. Builds are currently local/CI
-artifacts; no GitHub release or registry publication is performed automatically.
+artifacts on branch/PR builds. Publishing a GitHub Release additionally publishes
+its tested Docker image to GHCR after Windows and Linux checks succeed.
 
 ## Windows portable ZIP
 
@@ -65,7 +66,7 @@ For the full HTTP suite, point `PIXERVE_BIN` at the extracted executable and run
 requires Node.js and Sharp for fixture generation/inspection; those are developer
 test dependencies, not runtime requirements for the ZIP.
 
-The local package passed isolated SDK-path tests and all 134 HTTP checks. This
+The local package passed isolated SDK-path tests and all 137 HTTP checks. This
 is not a claim that every Windows version or clean virtual machine was tested.
 
 ## Linux Docker image
@@ -89,8 +90,10 @@ Windows and the Debian container; inspect native output before production rollou
 ## GitHub Actions
 
 The repository's `.github/workflows/pixerve-build.yml` runs on pull
-requests, main-branch changes, or manual dispatch with read-only repository access.
-It does not publish releases, log into a registry, or push images.
+requests, main-branch changes, manual dispatch, and published GitHub Releases.
+Build jobs have read-only repository access. Only the release publisher receives
+`packages: write` and authenticates to GHCR with the built-in `GITHUB_TOKEN`.
+PRs, branch pushes, and manual build dispatches do not publish images.
 
 Windows jobs install Rust 1.92.0 and the official libvips 8.18.2 x64 web SDK.
 The SDK archive is verified against a pinned SHA-256. Jobs run format checks,
@@ -108,6 +111,51 @@ docker run --rm -p 127.0.0.1:3000:3000 pixerve:ci
 
 Workflow artifacts do not mean the workflow has already run. All workflow paths
 and the Docker build context resolve from the standalone repository root.
+
+## Publish a release image to GHCR
+
+1. Commit and push this workflow and the release sources to GitHub before
+   creating the release tag. Keep Cargo.toml/Cargo.lock versioning aligned with
+   the version being released.
+2. Create and publish a GitHub Release using `vMAJOR.MINOR.PATCH` (for example,
+   `v0.1.0`) or the equivalent unprefixed version. Pre-release suffixes such as
+   `v0.2.0-rc.1` are supported. Build metadata (`+build`) is rejected because it
+   is not a Docker tag character. Drafts and tag pushes alone do not publish.
+3. The workflow runs Windows and Linux checks. The Linux job builds, tests, and
+   saves the Docker image with source/revision/version OCI labels.
+4. After both jobs succeed, the publisher downloads the same tested image from
+   that workflow run, verifies its SHA-256, loads it, and pushes version tags.
+   The publisher does not rebuild an untested image.
+
+For `xviidev/pixerve`, a stable `v0.1.0` release publishes:
+
+```text
+ghcr.io/xviidev/pixerve:v0.1.0
+ghcr.io/xviidev/pixerve:0.1.0
+ghcr.io/xviidev/pixerve:latest
+```
+
+`latest` is updated only for a stable version that is also GitHub's current latest
+release. Pre-releases and older/backport releases keep version tags without
+replacing it. The release publisher is serialized per repository. Names are
+derived from the GitHub repository and lowercased, so forks use their own GHCR path.
+
+Once publication succeeds:
+
+```sh
+docker pull ghcr.io/xviidev/pixerve:v0.1.0
+docker run --rm -p 127.0.0.1:3000:3000 ghcr.io/xviidev/pixerve:v0.1.0
+```
+
+No custom registry token is required for the workflow. Repository/package policy
+must allow its GITHUB_TOKEN to publish. A first GHCR package may default to
+private visibility; set its package visibility to Public if you want anonymous
+pulls. For an existing package, grant this repository Actions access if needed.
+See [GitHub's Container registry guide](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry).
+
+A release publishes the Linux amd64 image. Windows ZIPs remain workflow artifacts;
+this workflow does not attach them as release downloads. No release or registry
+push has been executed by this local configuration change.
 
 ## Rebuilding assets
 

@@ -49,7 +49,7 @@ Set `PIXERVE_BIN` to an absolute executable path to test a different build. With
 it, the suite runs `target/release/pixerve` (`.exe` on Windows). It uses temporary
 sources and test credentials rather than production storage.
 
-Recorded validation: 10 Rust tests and 134 HTTP/image checks passed on Windows
+Recorded validation: 10 Rust tests and 137 HTTP/image checks passed on Windows
 with Rust 1.92 and libvips 8.18.2. Docker/Linux and live-CDN validation are pending.
 Re-run relevant checks after implementation changes; documentation-only edits
 need reference/example validation rather than another native release build.
@@ -85,9 +85,9 @@ Before publishing a release:
    dependency redistribution requirements. No application license is assigned yet.
 5. Validate a clean checkout, Linux/container codecs, secret exclusions, and
    the complete test workflow before publishing release artifacts.
-6. Configure the GitHub repository and run the supplied workflow. Release/registry
-   publication is a separate action; no badge or
-   published package is claimed here.
+6. Push the supplied workflow before creating a release. Publishing a GitHub
+   Release triggers GHCR publication after Windows/Linux checks pass; inspect
+   the workflow result before advertising image tags.
 
 See [distribution and CI](docs/distribution.md) for the portable packager,
 isolated package checker, and the Windows/Linux artifact workflow.

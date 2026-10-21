@@ -119,6 +119,8 @@ original origin response, not the latest edge request.
 | `409` | Uploaded bytes differ from the complete filename hash; rehash and publish a new key |
 | `410` | Deployment does not serve that `pv`; restore its route or migrate references |
 | `413` | Encoded source size, decoded input size, effective output size, open policy, parser bounds |
+| AVIF returns `422` / unknown `.avif` buffer format | Use the explicit AV1 encoder build; on Ubuntu install libheif-plugin-aomenc and libheif-plugin-dav1d, then run the codec preflight |
+| JPEG logs ignored trellis/deringing/scan options | Use the portable encoder options; these flags require mozjpeg and are not supported by standard distro JPEG builds |
 | `422` or empty/failed output | Corrupt source, unsupported codec, native encoder options, watermark dimensions |
 | `429` | Open limit is requests per `OPEN_WINDOW`, not requests per second; check trusted IP forwarding |
 | `502` / `504` | Source credentials, endpoint, region, permissions, network, fixed source timeout |

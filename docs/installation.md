@@ -20,6 +20,28 @@ sudo apt-get install build-essential pkg-config libvips-dev
 cargo build --release --locked
 ```
 
+On Ubuntu 24.04, libheif ships AV1 encoding/decoding as separate plugins. Install
+both explicitly; libvips-dev alone does not guarantee working AVIF output:
+
+```sh
+sudo apt-get install libvips-tools libheif-plugin-aomenc libheif-plugin-dav1d
+mkdir -p target/codec-check
+vips heifsave static/example.png target/codec-check/preflight.avif --compression av1 --Q 70 --effort 2 --bitdepth 8 --strip
+vipsheader -a target/codec-check/preflight.avif
+```
+
+Debian Bookworm instead provides AOM/dav1d support through libheif1 dependencies;
+the Docker runtime explicitly installs libheif1, libaom3, and libdav1d6. Do not
+install Ubuntu plugin package names into the Bookworm image.
+
+Pixerve selects the HEIF buffer writer with AV1 compression explicitly instead
+of relying on the platform's `.avif` buffer-suffix registration. JPEG uses
+progressive coding and Huffman optimization supported by both standard libjpeg
+and mozjpeg, without mozjpeg-only trellis/deringing/scan optimization flags.
+Changing encoder settings can change output bytes; bump PIPELINE_VERSION and
+follow the [pipeline retention policy](../CDN.md#pipeline-upgrades-and-retention)
+when deploying this change to an existing cached service.
+
 The runtime also needs libvips and its codec dependencies. The Dockerfile uses
 Debian Bookworm and installs `libvips42` in the runtime image. The Linux/container
 recipe has not yet been validated locally.

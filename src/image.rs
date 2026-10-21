@@ -3,7 +3,7 @@ use anyhow::{Result, ensure};
 use bytes::Bytes;
 use rs_vips::{
     VipsImage,
-    enums::{BlendMode, Extend, Interesting, Interpretation, Size},
+    enums::{BlendMode, Extend, ForeignHeifCompression, Interesting, Interpretation, Size},
     voption::{Setter, VOption},
 };
 
@@ -189,13 +189,26 @@ fn encode(image: &VipsImage, t: &Transforms, format: &str) -> Result<Bytes> {
         &rgb
     };
     let q = t.q.unwrap_or(95);
+    if format == "avif" {
+        // AVIF suffix registration varies with libvips/libheif builds. Select
+        // the HEIF buffer writer and AV1 compression explicitly on every OS.
+        return Ok(Bytes::from(
+            image.heifsave_buffer_with_opts(
+                VOption::new()
+                    .set("compression", ForeignHeifCompression::Av1 as i32)
+                    .set("Q", q as i32)
+                    .set("effort", 2)
+                    .set("bitdepth", 8)
+                    .set("strip", true),
+            )?,
+        ));
+    }
     let suffix = match format {
-        "avif" => format!(".avif[Q={q},effort=2,bitdepth=8,strip]"),
         "webp" => format!(".webp[Q={q},strip]"),
         "png" => ".png[compression=9,strip]".into(),
-        _ => format!(
-            ".jpg[Q={q},interlace,optimize-coding,optimize-scans,trellis-quant,overshoot-deringing,strip]"
-        ),
+        // Progressive coding and Huffman optimization work with both
+        // libjpeg-turbo and mozjpeg; do not send mozjpeg-only options.
+        _ => format!(".jpg[Q={q},interlace,optimize-coding,strip]"),
     };
     Ok(Bytes::from(image.write_to_buffer(&suffix)?))
 }

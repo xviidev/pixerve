@@ -1,10 +1,12 @@
-name: Pixerve portable and Docker builds
+name: Pixerve builds and release publishing
 
 on:
   pull_request:
   push:
     branches: [main]
   workflow_dispatch:
+  release:
+    types: [published]
 
 permissions:
   contents: read
@@ -39,6 +41,8 @@ jobs:
           "VIPS_SDK=$sdk" >> $env:GITHUB_ENV
           "VIPS_LIB_DIR=$sdk/lib" >> $env:GITHUB_ENV
           "$sdk/bin" >> $env:GITHUB_PATH
+      - name: Check release tag policy
+        run: node --test scripts/release-image.test.mjs
       - name: Format and Rust tests
         run: |
           cargo fmt --check
@@ -76,7 +80,13 @@ jobs:
         with:
           node-version: '22'
       - name: Install native build dependencies
-        run: sudo apt-get update && sudo apt-get install -y libvips-dev pkg-config build-essential
+        run: sudo apt-get update && sudo apt-get install -y libvips-dev libvips-tools libheif-plugin-aomenc libheif-plugin-dav1d pkg-config build-essential
+      - name: Verify Linux AV1 encoder before compilation
+        run: |
+          vips --version
+          mkdir -p target/codec-check
+          vips heifsave static/example.png target/codec-check/preflight.avif --compression av1 --Q 70 --effort 2 --bitdepth 8 --strip
+          vipsheader -a target/codec-check/preflight.avif
       - name: Install pinned Rust toolchain
         run: |
           rustup toolchain install 1.92.0 --profile minimal --component rustfmt
@@ -89,8 +99,12 @@ jobs:
           npm ci
           node scripts/smoke.mjs
       - name: Build and inspect Linux x64 container
+        env:
+          IMAGE_SOURCE: ${{ github.server_url }}/${{ github.repository }}
+          IMAGE_REVISION: ${{ github.sha }}
+          IMAGE_VERSION: ${{ github.event.release.tag_name || github.sha }}
         run: |
-          docker build --platform linux/amd64 -f Dockerfile -t pixerve:ci .
+          docker build --platform linux/amd64 -f Dockerfile --label "org.opencontainers.image.source=$IMAGE_SOURCE" --label "org.opencontainers.image.revision=$IMAGE_REVISION" --label "org.opencontainers.image.version=$IMAGE_VERSION" -t pixerve:ci .
           docker run -d --name pixerve-ci -p 127.0.0.1:3000:3000 -e OPEN_RPS=100 -e OPEN_ALLOWED_FORMATS=avif,webp,jpeg,png pixerve:ci
           trap 'docker logs pixerve-ci; docker rm -f pixerve-ci' EXIT
           for attempt in $(seq 1 30); do
@@ -112,3 +126,59 @@ jobs:
             pixerve-linux-amd64-docker.tar.gz
             pixerve-linux-amd64-docker.tar.gz.sha256
           if-no-files-found: error
+
+  ghcr:
+    name: Publish tested release image to GHCR
+    if: github.event_name == 'release' && github.event.action == 'published'
+    needs: [windows, linux]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: write
+    concurrency:
+      group: pixerve-ghcr-${{ github.repository }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Resolve and validate image tags
+        id: image
+        run: node scripts/release-image.mjs
+      - uses: actions/download-artifact@v8
+        with:
+          name: pixerve-linux-amd64-docker
+          path: release-image
+      - name: Verify and load the image tested by Linux CI
+        working-directory: release-image
+        run: |
+          sha256sum --check pixerve-linux-amd64-docker.tar.gz.sha256
+          gzip -dc pixerve-linux-amd64-docker.tar.gz | docker load
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Push release tags
+        env:
+          IMAGE: ${{ steps.image.outputs.image }}
+          TAGS: ${{ steps.image.outputs.tags }}
+          RELEASE_ID: ${{ github.event.release.id }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          IFS=',' read -r -a release_tags <<< "$TAGS"
+          for tag in "${release_tags[@]}"; do
+            if [[ "$tag" == latest ]]; then
+              latest_id="$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq '.id')"
+              if [[ "$latest_id" != "$RELEASE_ID" ]]; then
+                printf 'Skipped latest: this release is not GitHub latest.\n' >> "$GITHUB_STEP_SUMMARY"
+                continue
+              fi
+            fi
+            docker tag pixerve:ci "$IMAGE:$tag"
+            docker push "$IMAGE:$tag"
+            printf 'Published `%s:%s`\n' "$IMAGE" "$tag" >> "$GITHUB_STEP_SUMMARY"
+          done

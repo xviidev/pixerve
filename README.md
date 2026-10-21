@@ -35,10 +35,12 @@ as an executable HTTP service, not a published Rust library or SDK.
 Pixerve is a standalone repository. Cargo.toml, Dockerfile, static assets, scripts,
 and CI workflows live in its root. Its package, executable, and log target are
 named `pixerve`. Run commands from this repository root unless noted otherwise.
-No published GitHub release, container image, or crates.io package is required
-or assumed.
+Published GitHub Releases trigger tested Linux Docker publication to GHCR.
+Branch/PR builds only produce workflow artifacts. See the
+[release publishing guide](docs/distribution.md#publish-a-release-image-to-ghcr).
+A published registry image is not assumed until that workflow succeeds.
 
-Local validation has passed **10 Rust tests and 134 HTTP/image checks** on Windows
+Local validation has passed **10 Rust tests and 137 HTTP/image checks** on Windows
 with Rust 1.92 and libvips 8.18.2, including the release executable. Docker/Linux
 and live CDN rules have not yet been validated. Comparative CPU/RAM benchmarks
 have not been performed; resource defaults are controls, not performance claims.

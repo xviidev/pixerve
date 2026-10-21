@@ -107,8 +107,15 @@ try {
   assert.deepEqual(Buffer.from(await raw.arrayBuffer()), await readFile(path.join(input, 'photo.jpg'))); pass();
 
   for (const f of ['jpeg', 'png', 'webp', 'avif']) {
-    await image(signed('photo.jpg', { w: 320, h: 180, f, q: 70 }), { width: 320, height: 180, format: f === 'avif' ? 'heif' : f });
+    const encoded = await image(signed('photo.jpg', { w: 320, h: 180, f, q: 70 }), { width: 320, height: 180, format: f === 'avif' ? 'heif' : f });
+    if (f === 'avif') {
+      assert.equal(encoded.bytes.toString('ascii', 4, 8), 'ftyp');
+      assert.equal(encoded.bytes.toString('ascii', 8, 12), 'avif', 'AVIF must contain AV1, not HEVC'); pass();
+      await writeFile(path.join(input, 'roundtrip.avif'), encoded.bytes);
+    }
   }
+  assert.doesNotMatch(logs, /ignoring (trellis_quant|overshoot_deringing|optimize_scans)/); pass();
+  await image(signed('roundtrip.avif', { w: 160, f: 'png' }), { width: 160, height: 90, format: 'png' });
   for (const [fit, width, height] of [['cover', 300, 300], ['contain', 300, 300], ['fill', 300, 300], ['inside', 300, 188], ['outside', 480, 300]]) {
     await image(signed('photo.jpg', { w: 300, h: 300, f: 'png', fit }), { width, height });
   }
