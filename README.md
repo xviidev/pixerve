@@ -1,3 +1,4 @@
+![Pixerve](./assets/readme-cover.png)
 # Pixerve
 
 Serve resized images from local storage or an S3-compatible bucket. Pixerve
@@ -43,6 +44,8 @@ behind HTTPS. Use private mode for images that require restricted access.
 
 ## Documentation
 
+Read the [Pixerve documentation](https://pixerve.xvii.dev/).
+
 The [JavaScript and TypeScript SDK](https://github.com/xviidev/pixerve-js)
 generates canonical URLs for browser and backend applications:
 
@@ -53,12 +56,12 @@ npm install @xviidev/pixerve
 Use `@xviidev/pixerve` for public URLs and `@xviidev/pixerve/server` for signing
 in Node.js. Keep signing keys on the backend.
 
-- [Install and configure Pixerve](apps/docs/src/content/docs/start/installation.md)
-- [Resize, crop, and convert images](apps/docs/src/content/docs/start/usage.md)
-- [Connect a CMS](apps/docs/src/content/docs/guides/cms.md)
-- [Signing and private images](apps/docs/src/content/docs/guides/signing.md)
-- [CDN caching](apps/docs/src/content/docs/guides/delivery.md)
-- [HTTP API](apps/docs/src/content/docs/reference/http.md) and [configuration](apps/docs/src/content/docs/reference/configuration.md)
+- [Install and configure Pixerve](https://pixerve.xvii.dev/start/installation/)
+- [Resize, crop, and convert images](https://pixerve.xvii.dev/start/usage/)
+- [Connect a CMS](https://pixerve.xvii.dev/guides/cms/)
+- [Signing and private images](https://pixerve.xvii.dev/guides/signing/)
+- [CDN caching](https://pixerve.xvii.dev/guides/delivery/)
+- [HTTP API](https://pixerve.xvii.dev/reference/http/) and [configuration](https://pixerve.xvii.dev/reference/configuration/)
 
 For source builds and development, see [Contributing](CONTRIBUTING.md).
 

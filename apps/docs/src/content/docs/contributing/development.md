@@ -30,6 +30,11 @@ Use `npm run dev:docs` while editing documentation. Set `DOCS_SITE` to the publi
 site origin when deploying. Set `DOCS_BASE` if hosting under a path prefix.
 The generated files can be hosted on a static web server; no runtime backend is required.
 
+The public site is deployed to [GitHub Pages](https://pixerve.xvii.dev/)
+by `.github/workflows/docs.yml`. Changes to the documentation on `main` trigger
+a build, link checks, and deployment. The workflow obtains the site origin and
+base path from GitHub Pages; local development remains at `/`.
+
 ## Rust and image checks
 
 Install the native prerequisites below, then run:
