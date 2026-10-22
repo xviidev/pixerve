@@ -1,6 +1,7 @@
-# Operations, troubleshooting, and benchmarks
-
-[Documentation index](README.md)
+---
+title: "Operations"
+description: "Inspect cache behavior, monitor the service, and diagnose image errors."
+---
 
 ## Health and metrics
 
@@ -16,7 +17,7 @@ curl -H "Authorization: Bearer $METRICS_TOKEN" http://127.0.0.1:3000/metrics
 
 Disabled or unauthorized metrics return `404`. The token is independent of the
 URL signing key and origin-access token. The sample
-[Prometheus configuration](../deploy/prometheus.yml) reads credentials from a
+[Prometheus configuration](https://github.com/xviidev/pixerve/blob/main/deploy/prometheus.yml) reads credentials from a
 separate mounted file. Replace its hostname and token-file path for your system.
 
 ## Metric reference
@@ -47,7 +48,6 @@ Histogram buckets are 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10,
 and +Inf seconds, with standard `_bucket`, `_count`, and `_sum` series.
 Duration measures the handler, not complete client transfer time. Byte metrics
 use `Content-Length`, not actual socket delivery; HEAD/304 count zero body bytes.
-Some framework/error bodies may not yet have a declared length at observation.
 
 RSS is sampled only when metrics are requested; there is no application idle
 polling loop. CPU/cgroup usage and Windows RSS require OS/container monitoring.
@@ -57,20 +57,20 @@ Missing platform metrics are omitted, not reported as zero.
 
 Aggregate handler p95:
 
-```promql
+```text
 histogram_quantile(0.95, sum by (le) (rate(img_request_duration_seconds_bucket[5m])))
 ```
 
 Aggregate 5xx fraction:
 
-```promql
+```text
 sum(rate(img_server_errors_total[5m]))
 / clamp_min(sum(rate(img_requests_total[5m])), 0.000001)
 ```
 
 Origin result reuse ratio, including coalesced requests:
 
-```promql
+```text
 (
   sum(rate(img_ram_hits_total[5m]))
   + sum(rate(img_disk_hits_total[5m]))
@@ -93,35 +93,32 @@ are approximate during concurrent requests and reset on process restart.
 
 ## Inspect delivery
 
-Run from the repository root against a deployed public canonical image URL:
+Inspect the headers of a deployed canonical image URL:
 
 ```sh
-node scripts/check-cdn.mjs 'https://img.example.com/your-canonical-image-url'
+curl -I 'https://img.example.com/your-canonical-image-url'
 ```
 
-The script makes three GETs and prints status, bytes, type, cache policy, Age,
-Cloudflare/Fastly status, origin cache status, and timing. Canonical `sig` and
-`asig` query values are redacted. It does not change CDN settings or declare that
-every repeated request must be a HIT. Test automatic format Accept cases
-separately. Browser/edge-cached `X-Img-Cache` and `Server-Timing` describe the
-original origin response, not the latest edge request.
+Repeat the request and inspect `Age`, `Cache-Control`, `CF-Cache-Status` or
+`X-Cache`, and `X-Img-Cache`. Test automatic-format requests with different
+`Accept` headers separately. Cached `X-Img-Cache` and `Server-Timing` describe
+the original origin response, not the latest edge request.
 
 ## Troubleshooting
 
 | Symptom | Check |
 |---|---|
-| Native library/DLL load error | Matching SDK architecture, `VIPS_LIB_DIR` during build, DLL/runtime library path |
+| Native library/DLL load error | Extract the complete Windows package and keep DLLs beside the executable |
 | Startup fails on assets | Working directory, `STATIC_DIR`, required watermark file, service-user permissions |
+| Startup cannot render error images | Use the complete distribution; source installations also require libvips SVG/text support and an available font |
 | Local source unavailable | Correct key/root, existing file, root containment, permissions |
 | `403` | Correct key, exact normalized params, clock/expiry, matching pipeline, correct origin header |
 | Signed raw/static/OG still public | Public mode intentionally allows these; use private mode for restricted content |
-| `308` before the image | Expected canonicalization; use CLI output directly or follow Location |
+| `308` before the image | Expected canonicalization; use an SDK/CLI canonical URL or follow Location |
 | `409` | Uploaded bytes differ from the complete filename hash; rehash and publish a new key |
 | `410` | Deployment does not serve that `pv`; restore its route or migrate references |
 | `413` | Encoded source size, decoded input size, effective output size, open policy, parser bounds |
-| Smoke test loses HEIF/AVIF support after loading Sharp | Preserve the caller environment before importing Sharp; its bundled libvips sets `VIPSHOME`, which must not redirect Pixerve to Sharp's build prefix |
-| AVIF returns `422` / unknown `.avif` buffer format | Use the explicit AV1 encoder build; on Ubuntu install libheif-plugin-aomenc and libheif-plugin-dav1d, then run the codec preflight |
-| JPEG logs ignored trellis/deringing/scan options | Use the portable encoder options; these flags require mozjpeg and are not supported by standard distro JPEG builds |
+| AVIF returns `422` | Use the current Docker image or full Windows package; check source validity and the server logs |
 | `422` or empty/failed output | Corrupt source, unsupported codec, native encoder options, watermark dimensions |
 | `429` | Open limit is requests per `OPEN_WINDOW`, not requests per second; check trusted IP forwarding |
 | `502` / `504` | Source credentials, endpoint, region, permissions, network, fixed source timeout |
@@ -130,12 +127,11 @@ original origin response, not the latest edge request.
 | High idle RSS after traffic | Native allocator/codec retention and OS cache; RAM cache size is not RSS |
 | Disk cache write warning | Volume permissions/free space and one-process ownership; result can still be served |
 
-## Reproducible performance comparisons
+## Measure capacity
 
-No comparative benchmark result is currently claimed. Use equal CPU/memory
-limits, source fixtures, native codec versions, output dimensions, and quality
-when comparing deployments. Record source/output sizes and image quality along
-with throughput; different encoders may not emit identical bytes.
+Measure capacity with representative source images, output sizes, and formats.
+Keep CPU and memory limits consistent across runs. Record output sizes and image
+quality alongside throughput.
 
 Measure these workloads separately:
 

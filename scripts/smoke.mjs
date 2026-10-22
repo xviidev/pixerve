@@ -116,9 +116,23 @@ async function image(url, expected, headers = {}) {
 async function policyError(url, status, message) {
   const response = await fetch(origin + url);
   assert.equal(response.status, status, url);
-  assert.equal(await response.text(), message, url);
+  assert.equal(response.headers.get('x-img-error'), message, url);
+  await errorBody(response);
   assert.equal(response.headers.get('cache-control'), 'no-store', url);
   pass();
+}
+
+async function errorBody(response) {
+  assert.equal(response.headers.get('content-type'), 'image/png');
+  assert.equal(response.headers.get('cache-control'), 'no-store');
+  assert.equal(response.headers.get('x-content-type-options'), 'nosniff');
+  assert.equal(response.headers.get('etag'), null);
+  const bytes = Buffer.from(await response.arrayBuffer());
+  const metadata = await sharp(bytes).metadata();
+  assert.equal(metadata.width, 1672);
+  assert.equal(metadata.height, 940);
+  assert.equal(metadata.format, 'png');
+  return bytes;
 }
 
 try {
@@ -128,6 +142,20 @@ try {
   await writeFile(path.join(input, 'large.bin'), Buffer.alloc(1024 * 1024 + 1));
   await writeFile(path.join(input, 'invalid.jpg'), 'invalid image');
   await start();
+  const missing = await fetch(origin + '/missing.png');
+  assert.equal(missing.status, 404);
+  const missingBytes = await errorBody(missing);
+  assert.deepEqual(await errorBody(await fetch(origin + '/missing.png')), missingBytes);
+  const missingHead = await fetch(origin + '/missing.png', { method: 'HEAD' });
+  assert.equal(missingHead.status, 404);
+  assert.equal(missingHead.headers.get('content-type'), 'image/png');
+  assert.equal(Number(missingHead.headers.get('content-length')), missingBytes.length);
+  assert.equal((await missingHead.arrayBuffer()).byteLength, 0);
+  const unsupported = await fetch(origin + '/missing.png', { method: 'POST' });
+  assert.equal(unsupported.status, 405);
+  assert.match(unsupported.headers.get('allow'), /GET/);
+  assert.notDeepEqual(await errorBody(unsupported), missingBytes);
+  pass();
   assert.deepEqual(await (await fetch(origin + '/health')).json(), { ok: true }); pass();
   assert.equal((await fetch(origin + '/static/logo.png')).status, 200); pass();
   const raw = await fetch(origin + '/photo.jpg');
@@ -368,9 +396,10 @@ try {
   await start({ SOURCE_DIR: '', S3_ENDPOINT: `http://127.0.0.1:${s3Mock.address().port}`, S3_BUCKET: 'smoke-bucket', S3_ACCESS_KEY_ID: 'test-key', S3_ACCESS_KEY_SECRET: 'test-secret', S3_REGION: 'auto' });
   // Favicon requests must stay local even when the main source is S3.
   const missingIcon = await fetch(origin + '/favicon.ico', { redirect: 'manual' });
-  assert.equal(missingIcon.status, 404);
-  assert.equal(s3Calls, 0, 'Missing local favicon must not fall back to S3'); pass();
-  const iconBytes = await readFile(path.join(root, 'static/favicon.ico'));
+  assert.equal(missingIcon.status, 200);
+  const iconBytes = await readFile(path.join(root, 'assets/favicon.ico'));
+  assert.deepEqual(Buffer.from(await missingIcon.arrayBuffer()), iconBytes);
+  assert.equal(s3Calls, 0, 'Built-in favicon must not read S3'); pass();
   assert.deepEqual([...iconBytes.subarray(0, 6)], [0, 0, 1, 0, 4, 0]);
   for (let i = 0; i < 4; i++) {
     const entry = 6 + i * 16;
@@ -380,7 +409,7 @@ try {
     const size = [16, 32, 48, 256][i];
     assert.equal(frame.width, size); assert.equal(frame.height, size);
   }
-  await writeFile(path.join(staticInput, 'favicon.ico'), iconBytes);
+  await writeFile(path.join(staticInput, 'favicon.ico'), 'User static files do not replace the built-in icon');
   const icon = await fetch(origin + '/favicon.ico', { redirect: 'manual' });
   assert.equal(icon.status, 200);
   assert.match(icon.headers.get('content-type'), /^image\/(?:x-icon|vnd.microsoft.icon)$/);
@@ -402,10 +431,11 @@ try {
   const overload = await Promise.all(Array.from({ length: 16 }, (_, i) => fetch(origin + `/slow-${i}.jpg`)));
   assert.ok(overload.some(r => r.status === 503), 'Bounded queue must reject excess work');
   assert.ok(overload.every(r => [200, 503].includes(r.status)));
-  await Promise.all(overload.map(r => r.arrayBuffer()));
+  await Promise.all(overload.map(r => r.status === 503 ? errorBody(r) : r.arrayBuffer()));
   assert.equal(maxActive, 1, 'Source downloads must obey MAX_CONCURRENT'); pass();
   const backendError=await fetch(origin+'/forbidden.jpg');
   assert.equal(backendError.status,502);assert.equal(backendError.headers.get('cache-control'),'no-store');pass();
+  await errorBody(backendError);
   console.log(`PASS: ${checks} HTTP/image checks (codecs, fits, focus, EXIF, alpha, OG, signing, cache, restart, limits).`);
 } catch (e) {
   console.error(logs);

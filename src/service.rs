@@ -1,5 +1,5 @@
 use crate::{
-    App, Entry, Failure, cdn, image, metrics, mime, now,
+    App, Entry, Failure, FailureMessage, cdn, error_image, image, metrics, mime, now,
     params::{self, Transforms},
 };
 use axum::{
@@ -251,41 +251,46 @@ pub async fn handle(
                     }
                     worker_label.store(2, Ordering::Relaxed);
                     metrics::inc(&app.stats.misses);
-                    metrics::inc(&app.stats.source_reads);
-                    let source = if static_file {
-                        &app.static_source
+                    let input = if favicon {
+                        bytes::Bytes::from_static(error_image::FAVICON)
                     } else {
-                        &app.source
-                    };
-                    let input = match tokio::time::timeout(
-                        Duration::from_secs(30),
-                        source.read(&file, app.config.max_source_bytes),
-                    )
-                    .await
-                    {
-                        Ok(Ok(bytes)) => bytes,
-                        Ok(Err(e)) => {
-                            metrics::inc(&app.stats.source_errors);
-                            tracing::warn!(error=%e,"Source read failed");
-                            return Err(if e.to_string().contains("too large") {
-                                Failure(StatusCode::PAYLOAD_TOO_LARGE, "Source too large")
-                            } else if e
-                                .downcast_ref::<object_store::Error>()
-                                .is_some_and(|e| matches!(e, object_store::Error::NotFound { .. }))
-                                || e.downcast_ref::<std::io::Error>()
+                        metrics::inc(&app.stats.source_reads);
+                        let source = if static_file {
+                            &app.static_source
+                        } else {
+                            &app.source
+                        };
+                        let input = match tokio::time::timeout(
+                            Duration::from_secs(30),
+                            source.read(&file, app.config.max_source_bytes),
+                        )
+                        .await
+                        {
+                            Ok(Ok(bytes)) => bytes,
+                            Ok(Err(e)) => {
+                                metrics::inc(&app.stats.source_errors);
+                                tracing::warn!(error=%e,"Source read failed");
+                                return Err(if e.to_string().contains("too large") {
+                                    Failure(StatusCode::PAYLOAD_TOO_LARGE, "Source too large")
+                                } else if e.downcast_ref::<object_store::Error>().is_some_and(|e| {
+                                    matches!(e, object_store::Error::NotFound { .. })
+                                }) || e
+                                    .downcast_ref::<std::io::Error>()
                                     .is_some_and(|e| e.kind() == std::io::ErrorKind::NotFound)
-                            {
-                                Failure(StatusCode::NOT_FOUND, "Source unavailable")
-                            } else {
-                                Failure(StatusCode::BAD_GATEWAY, "Source unavailable")
-                            });
-                        }
-                        Err(_) => {
-                            metrics::inc(&app.stats.source_errors);
-                            return Err(Failure(StatusCode::GATEWAY_TIMEOUT, "Source timeout"));
-                        }
+                                {
+                                    Failure(StatusCode::NOT_FOUND, "Source unavailable")
+                                } else {
+                                    Failure(StatusCode::BAD_GATEWAY, "Source unavailable")
+                                });
+                            }
+                            Err(_) => {
+                                metrics::inc(&app.stats.source_errors);
+                                return Err(Failure(StatusCode::GATEWAY_TIMEOUT, "Source timeout"));
+                            }
+                        };
+                        metrics::add(&app.stats.source_bytes, input.len() as u64);
+                        input
                     };
-                    metrics::add(&app.stats.source_bytes, input.len() as u64);
                     if !cdn::verify_source(&file, &input) {
                         metrics::inc(&app.stats.source_errors);
                         return Err(Failure(StatusCode::CONFLICT, "Source fingerprint mismatch"));
@@ -418,6 +423,27 @@ pub async fn observe(State(app): State<Arc<App>>, request: Request, next: Next) 
     let head = request.method() == axum::http::Method::HEAD;
     let start = Instant::now();
     let mut response = next.run(request).await;
+    if measured && (response.status().is_client_error() || response.status().is_server_error()) {
+        let status = response.status();
+        let message = response
+            .extensions()
+            .get::<FailureMessage>()
+            .map(|message| message.0)
+            .unwrap_or_else(|| status.canonical_reason().unwrap_or("Image unavailable"));
+        let bytes = app.errors.get(status);
+        let headers = response.headers_mut();
+        headers.insert(header::CONTENT_TYPE, "image/png".parse().unwrap());
+        headers.insert(header::CONTENT_LENGTH, bytes.len().into());
+        headers.insert(header::CACHE_CONTROL, "no-store".parse().unwrap());
+        headers.insert("X-Content-Type-Options", "nosniff".parse().unwrap());
+        headers.insert("X-Img-Error", message.parse().unwrap());
+        headers.remove(header::ETAG);
+        *response.body_mut() = if head {
+            Body::empty()
+        } else {
+            Body::from(bytes)
+        };
+    }
     if measured {
         let bytes = if head {
             0

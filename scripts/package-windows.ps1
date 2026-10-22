@@ -35,7 +35,25 @@ if ($modules.Count) {
 foreach ($folder in @('assets','static')) {
     Copy-Item -LiteralPath (Join-Path $project "$folder") -Destination $stage -Recurse
 }
-foreach ($item in @('docs','CDN.md','CONTRIBUTING.md')) { Copy-Item -LiteralPath (Join-Path $project $item) -Destination $stage -Recurse }
+$docsSource = Join-Path $project 'apps/docs/src/content/docs'
+Copy-Item -LiteralPath $docsSource -Destination (Join-Path $stage 'docs') -Recurse
+# Export the same Markdown sources with file links for offline package readers.
+foreach ($document in Get-ChildItem -LiteralPath (Join-Path $stage 'docs') -Filter '*.md' -Recurse) {
+    $text = Get-Content -LiteralPath $document.FullName -Raw
+    $text = [regex]::Replace($text, '\A---\r?\n[\s\S]*?\r?\n---\r?\n', '')
+    $text = [regex]::Replace($text, '\]\((?!https?:|#)([^)]+)\)', {
+        param($match)
+        $parts = $match.Groups[1].Value.Split('#', 2)
+        $link = $parts[0]
+        if ($link.EndsWith('/')) {
+            if ($link -match '(^|/)\.\.?/$') { $link += 'index.md' }
+            else { $link = $link.TrimEnd('/') + '.md' }
+        }
+        if ($parts.Count -eq 2) { $link += '#' + $parts[1] }
+        return '](' + $link + ')'
+    })
+    [IO.File]::WriteAllText($document.FullName, $text, (New-Object System.Text.UTF8Encoding($false)))
+}
 $notice = Join-Path $stage 'third-party/libvips'
 $null = New-Item -ItemType Directory -Path $notice -Force
 foreach ($item in @('LICENSE','README.md','versions.json')) {
@@ -49,7 +67,7 @@ $portable = @'
 # Pixerve portable for Windows x64
 
 This package includes Pixerve, libvips runtime DLLs, a neutral sample image, and
-a transparent starter OG overlay. No Rust compiler or libvips SDK is required.
+the built-in artwork. No Rust compiler or libvips SDK is required.
 Extract the entire directory; keep its DLLs beside pixerve.exe.
 
 From PowerShell in this directory:
@@ -64,18 +82,18 @@ http://localhost:3000/example.png?w=640&f=webp (follow the canonical redirect).
 The initial configuration uses local sample storage and conservative open limits.
 Configure signing and a trusted TLS proxy before production use.
 
-For S3, clear SOURCE_DIR and fill in S3 settings. Replace assets/og_wm.png with
-your own overlay to add visible branding; the starter overlay is transparent.
+For S3, clear SOURCE_DIR and fill in S3 settings. Set OG_WATERMARK to your own
+overlay file to customize social cards. Keep your public files in static/;
+the favicon and error artwork are embedded in the executable.
 Run from this directory so configuration and relative paths resolve correctly.
 
-See [documentation](docs/README.md), [configuration](docs/configuration.md), and
-[CDN delivery](CDN.md). Commands in source-build guides assume a source checkout;
-in this package use ./pixerve.exe instead of ./target/release/pixerve.
+See [documentation](docs/index.md), [configuration](docs/reference/configuration.md), and
+[CDN delivery](docs/guides/delivery.md). For URL and signing commands, run
+./pixerve.exe followed by the command and arguments.
 
 manifest.json records bundled file hashes and native dependency versions.
 third-party/libvips contains the upstream SDK license and version information.
-The application distribution license is not yet selected. This is a local build,
-not evidence of a published GitHub release.
+The application distribution license is not yet selected.
 '@
 [IO.File]::WriteAllText((Join-Path $stage 'README.md'), $portable, $utf8)
 $entries = @(Get-ChildItem -LiteralPath $stage -Recurse -File | Sort-Object FullName | ForEach-Object {

@@ -1,6 +1,7 @@
 mod cdn;
 mod config;
 mod disk;
+mod error_image;
 mod image;
 mod metrics;
 mod params;
@@ -62,9 +63,12 @@ impl moka::Expiry<String, Entry> for Expiration {
 
 #[derive(Clone, Debug)]
 struct Failure(StatusCode, &'static str);
+#[derive(Clone)]
+struct FailureMessage(&'static str);
 impl IntoResponse for Failure {
     fn into_response(self) -> Response {
         let mut response = (self.0, self.1).into_response();
+        response.extensions_mut().insert(FailureMessage(self.1));
         response
             .headers_mut()
             .insert(header::CACHE_CONTROL, "no-store".parse().unwrap());
@@ -86,6 +90,7 @@ struct App {
     cache: Cache<String, Entry>,
     disk: DiskCache,
     watermark: Option<Bytes>,
+    errors: error_image::ErrorImages,
     requests: Semaphore,
     admission: Arc<Semaphore>,
     workers: Arc<Semaphore>,
@@ -149,6 +154,7 @@ async fn main() -> Result<()> {
     rs_vips::Vips::cache_set_max(0);
     rs_vips::Vips::cache_set_max_mem(0);
     rs_vips::Vips::cache_set_max_files(0);
+    let errors = error_image::ErrorImages::load()?;
     let source = Source::new(&config).await?;
     let disk = DiskCache::new(config.disk_dir.clone(), config.disk_bytes, config.cache_ttl).await?;
     let watermark = Some(Bytes::from(
@@ -179,6 +185,7 @@ async fn main() -> Result<()> {
             source_id,
             &static_root,
             watermark.as_ref().map(|b| hex::encode(Sha256::digest(b))),
+            hex::encode(Sha256::digest(error_image::FAVICON)),
         ))
         .unwrap(),
     ));
@@ -205,6 +212,7 @@ async fn main() -> Result<()> {
         cache,
         disk,
         watermark,
+        errors,
         rates: Mutex::new(HashMap::new()),
     });
     let router = Router::new()

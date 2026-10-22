@@ -1,11 +1,11 @@
-# Configuration reference
-
-[Documentation index](README.md)
+---
+title: "Configuration"
+description: "Environment variables for storage, transforms, caching, and access."
+---
 
 Settings load at startup from the working directory's `.env` and process
 environment; existing environment values win. Parent `.env` files are not loaded.
-Restart after changes. Tables show code defaults; `.env.example` uses the same
-`static` and `assets/og_wm.png` paths relative to the repository root.
+Restart after changes. Tables list the server defaults.
 
 MB settings use 1,048,576 bytes. Pixel limits use decimal pixels. Booleans use
 lowercase `true` or `false`. Relative paths use the process working directory.
@@ -68,7 +68,7 @@ the remaining result lifetime.
 | `OPEN_MAX_MP` | `3` | Positive finite open output megapixel ceiling |
 | `OPEN_MAX_BLUR` | `10` | Finite open blur ceiling, at least 0.3 |
 | `OPEN_ALLOWED_FORMATS` | `avif,webp,jpeg` | Comma-separated open transform formats |
-| `OPEN_RPS` | `5` | Positive request count per window, despite the legacy name |
+| `OPEN_RPS` | `5` | Positive request count per `OPEN_WINDOW` for each IP |
 | `OPEN_WINDOW` | `60` | Positive IP window length in seconds |
 | `TRUST_PROXY` | `false` | Use `CF-Connecting-IP`, then `X-Real-IP`, for the client IP |
 
@@ -99,9 +99,4 @@ proxy replace client-supplied values. `X-Forwarded-For` is not used for this.
 The five CDN durations accept 0–31,536,000 seconds. Mutable freshness is capped
 by remaining origin lifetime; browser freshness is capped by edge freshness.
 Private responses always use `private, no-store`. Origin and metrics tokens are
-independent of URL signing. See [signing](signing.md) and [CDN delivery](../CDN.md).
-
-## Build environment
-
-`VIPS_LIB_DIR` adds a native library search path through `build.rs`. On Windows,
-the SDK DLL directory must also be on runtime `PATH`. See [installation](installation.md).
+independent of URL signing. See [signing](../cli/) and [CDN delivery](../../guides/delivery/).

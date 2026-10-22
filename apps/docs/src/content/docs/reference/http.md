@@ -1,11 +1,12 @@
-# HTTP API
-
-[Documentation index](README.md)
+---
+title: "HTTP API"
+description: "Image routes, transform parameters, presets, headers, and errors."
+---
 
 ## Routes
 
 Image routes support `GET` and `HEAD`. Examples omit authentication parameters;
-see [signing](signing.md) for when they are required.
+see [signing](../cli/) for when they are required.
 
 | Route | Behavior |
 |---|---|
@@ -17,9 +18,10 @@ see [signing](signing.md) for when they are required.
 | `/tr:f-webp,w-640,q-75/<key>` | Path-token transformation |
 | `/og/<key>` | Fixed social JPEG with watermark from the main source |
 | `/static/<key>` | Original bytes from local `STATIC_DIR` |
-| `/favicon.ico` | Local `STATIC_DIR/favicon.ico`; no redirect, transformation, or S3 fallback |
+| `/favicon.ico` | Embedded Pixerve icon; no redirect, transformation, or source read |
 
-`og/`, `static/`, and `tr:` are reserved prefixes; `/favicon.ico` is a reserved local asset route. On `/og/` and `/static/`, query
+`og/`, `static/`, and `tr:` are reserved prefixes. `/favicon.ico` serves the
+built-in icon. On `/og/` and `/static/`, query
 transform options do not override fixed route behavior. On `/tr:` routes,
 transform settings come from path tokens; query transform fields do not override
 them. Authentication and `pv` can still come from the query. Keys are relative paths.
@@ -106,12 +108,12 @@ Missing `f` or `f=auto` prefers explicitly accepted AVIF, then WebP, then JPEG
 fallback. An explicit media type with `q=0` is skipped. This is a format preference
 policy, not full HTTP quality ranking or a `406` negotiator; wildcards alone do
 not enable AVIF/WebP. Automatic responses include `Vary: Accept`; explicit formats,
-social JPEGs, and raw/static do not. See [CDN delivery](../CDN.md).
+social JPEGs, and raw/static do not. See [CDN delivery](../../guides/delivery/).
 
 ## Canonical URLs and versions
 
 By default, query/preset/alternative parameter order redirects with uncached
-`308` to a canonical URL. Authentication is checked first. Use CLI-generated
+`308` to a canonical URL. Authentication is checked first. Use SDK- or CLI-generated
 URLs to avoid that round trip.
 
 `pv` selects the configured pipeline. URLs without it remain mutable. A different
@@ -128,7 +130,8 @@ missing/wrong `pv` return `403`.
 | `Vary: Accept` | Automatic format transforms only |
 | `X-Img-Cache` | Origin path: `RAM`, `DISK`, `MISS`, `SHARED` |
 | `Server-Timing` | Origin handler duration, such as `img;dur=2.350` |
-| `X-Content-Type-Options` | `nosniff` on successful images |
+| `X-Content-Type-Options` | `nosniff` on successful images and error PNGs |
+| `X-Img-Error` | Diagnostic message on image errors |
 | `Retry-After` | `1` on application `429` / `503` |
 
 `If-None-Match` supports lists, weak/strong comparisons, and `*`. A match returns
@@ -156,15 +159,19 @@ loading/encoding on a cold cache. The weak ETag is not a cryptographic fingerpri
 | `503` | Request/job capacity exhausted or shutdown |
 | `504` | Source read exceeded 30 seconds |
 
-Application image errors have short plain-text bodies and `no-store`. Framework
-responses such as `405` may lack that header; bypass responses without explicit
-cache permission at the CDN.
+Image errors, including unsupported methods, return a PNG with the original
+HTTP status and `Cache-Control: no-store`. `X-Img-Error` contains the diagnostic
+message. `HEAD` returns the same headers and content length with no body.
+Existing `Retry-After` and `Allow` headers remain available. Errors have no ETag.
+
+`/health` and `/metrics` retain their operational response formats. Errors from
+an upstream proxy or CDN are outside Pixerve's response handling.
 
 ### Transform policy errors
 
-Policy rejections have distinct plain-text bodies and `Cache-Control: no-store`:
+Policy rejections use these `X-Img-Error` values and `Cache-Control: no-store`:
 
-| Status | Body | Setting |
+| Status | X-Img-Error | Setting |
 |---|---|---|
 | `403` | `Output format is not allowed for unsigned requests` | `OPEN_ALLOWED_FORMATS` |
 | `413` | `Unsigned image dimensions exceed configured limits` | `OPEN_MAX_W`, `OPEN_MAX_H`, `OPEN_MAX_MP` |

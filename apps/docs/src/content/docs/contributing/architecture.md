@@ -1,28 +1,17 @@
-# Architecture
-
-[Documentation index](README.md)
+---
+title: "Architecture"
+description: "Request handling, job admission, source reads, and result caches."
+---
 
 ## Request lifecycle
 
-```mermaid
-flowchart TD
-    A[Image request] --> B[Origin token and request admission]
-    B --> C[Parse, validate, and authenticate]
-    C --> D{Canonical URL?}
-    D -->|No| E[308 no-store redirect]
-    D -->|Yes| F[Rate and transform policy]
-    F --> G{RAM result?}
-    G -->|Hit| R[Conditional response and cache policy]
-    G -->|Miss| H[Coalesce identical variant requests]
-    H --> I[Bounded queue and worker slot]
-    I --> J{Disk result?}
-    J -->|Hit| R
-    J -->|Miss| K[Bounded local or S3 source read]
-    K --> L[Verify content hash when present]
-    L --> M[Native transform or raw passthrough]
-    M --> N[Persist result and populate RAM cache]
-    N --> R
-```
+1. Validate the origin token, source key, transforms, and URL signature.
+2. Redirect alternative URL spellings to the canonical path with an uncached 308.
+3. Apply rate and transform policy, then check RAM.
+4. Coalesce requests for the same variant and acquire a worker slot.
+5. Check disk before reading local storage or S3.
+6. Verify the source hash, process the image, and retain the result.
+7. Return the image or a conditional 304 with the matching cache headers.
 
 The async HTTP runtime uses one Tokio runtime thread. Blocking image operations
 run outside that thread, with native image objects confined to the processing
@@ -45,7 +34,8 @@ away. A full request/job limit returns `503` instead of admitting unbounded work
 
 Result keys are SHA-256 digests of namespace, source key, normalized transforms,
 actual output format, and transform/OG/static route identity. Namespace includes
-pipeline version, source identity, canonical static root, and watermark hash.
+pipeline version, source identity, canonical static root, watermark hash, and
+built-in favicon hash.
 Equivalent omitted/explicit render defaults share an origin cache identity.
 Authentication runs separately before lookup, so cached output is not an auth bypass.
 
@@ -68,13 +58,31 @@ convert to sRGB, and encode. JPEG flattens alpha; other outputs can preserve it.
 Smart crop materializes an already reduced image to avoid rereading a sequential
 decoder backwards. Encoders strip metadata; raw/static return unchanged bytes.
 
+Error cards are rendered once at startup from embedded SVG artwork and Pango
+text. Requests clone the matching PNG bytes without entering the native pipeline.
+Startup fails if error cards cannot be rendered. Error responses keep their HTTP
+status and bypass caches. The built-in favicon is also embedded;
+neither depends on files in the replaceable static directory.
+
+### Application artwork
+
+`assets/error.svg` and `assets/logo.svg` provide the error-card artwork.
+`assets/favicon.ico` provides the built-in favicon. Changes to these embedded
+assets require rebuilding the executable. `branding/pixerve-logo.svg` is the
+documentation logo.
+
+The social watermark is loaded at startup from `OG_WATERMARK`. Files served
+through `/static/` come from `STATIC_DIR`. The internal `assets/` directory is
+not an HTTP route.
+
 ## Resource boundaries
 
 Encoded source bytes, decoded input pixels, output pixels, jobs, request count,
 and cache retention are bounded independently. They are not a process RSS cap.
 Codecs, native pipelines, active source/output buffers, allocator retention, and
 OS file cache still consume memory. RAM retention can be disabled independently
-from disk caching. There is no claim of zero idle CPU or immediate RSS shrinkage.
+from disk caching. Native allocator retention can keep RSS above the configured
+RAM cache size after requests finish.
 
 The HTTP server provides neither TLS termination nor an upload API. CDN caching,
 application authentication, source publication, and frontend variant selection

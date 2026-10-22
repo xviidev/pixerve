@@ -1,0 +1,18 @@
+:root {
+  --sl-color-accent-low: #073b38;
+  --sl-color-accent: #19b9a7;
+  --sl-color-accent-high: #b3f4e8;
+  --sl-font: system-ui, sans-serif;
+}
+:root[data-theme='light'] {
+  --sl-color-accent-low: #d8f7ef;
+  --sl-color-accent: #087f73;
+  --sl-color-accent-high: #07564f;
+}
+.site-title img {
+  height: 2.5rem;
+  width: auto;
+  filter: invert(1);
+}
+:root[data-theme='light'] .site-title img { filter: none; }
+.sl-markdown-content h2 { letter-spacing: -0.025em; }

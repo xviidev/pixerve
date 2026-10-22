@@ -1,0 +1,11 @@
+**
+!Cargo.toml
+!Cargo.lock
+!build.rs
+!Dockerfile
+!src/
+!src/**
+!assets/
+!assets/**
+!static/
+!static/**

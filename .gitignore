@@ -3,6 +3,10 @@
 /.cache/
 /.env
 /node_modules/
+**/node_modules/
+/apps/*/dist/
+/apps/*/.astro/
 /.env.*
 !/.env.example
 *.log
+*.tgz

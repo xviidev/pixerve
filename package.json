@@ -1,14 +1,24 @@
 {
-  "name": "pixerve-dev",
+  "name": "pixerve-workspace",
   "private": true,
-  "description": "Development-only HTTP fixtures and checks for Pixerve",
+  "type": "module",
+  "description": "Pixerve documentation and HTTP checks",
+  "workspaces": ["apps/*"],
   "scripts": {
+    "build": "npm run build:docs",
+    "build:docs": "npm run build --workspace @pixerve/docs",
+    "dev:docs": "npm run dev --workspace @pixerve/docs",
+    "check": "npm run check --workspaces --if-present",
+    "test": "node --test scripts/release-image.test.mjs",
     "test:http": "node scripts/smoke.mjs"
   },
   "devDependencies": {
     "sharp": "0.33.5"
   },
+  "overrides": {
+    "@astrojs/prism": "4.0.2"
+  },
   "engines": {
-    "node": ">=22"
+    "node": ">=22.18.0"
   }
 }

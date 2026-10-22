@@ -1,0 +1,13 @@
+{
+  "name": "@pixerve/docs",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "astro dev --host 127.0.0.1",
+    "check": "astro check",
+    "build": "astro build && node ../../scripts/check-docs.ts",
+    "preview": "astro preview --host 127.0.0.1"
+  },
+  "dependencies": { "@astrojs/starlight": "0.38.5", "astro": "^6.0.0" },
+  "devDependencies": { "@astrojs/check": "0.9.12", "typescript": "^5.9.3" }
+}

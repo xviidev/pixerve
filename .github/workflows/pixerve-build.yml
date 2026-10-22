@@ -12,9 +12,26 @@ permissions:
   contents: read
 
 jobs:
+  javascript:
+    name: Documentation
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npm run check
+      - run: npm test
+      - run: npm run build:docs
+
   windows:
     runs-on: windows-2022
     timeout-minutes: 30
+    permissions:
+      contents: write
     defaults:
       run:
         shell: pwsh
@@ -52,9 +69,22 @@ jobs:
         run: |
           cargo build --release --locked -j 2
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          npm ci
+          npm ci --workspaces=false
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           node scripts/smoke.mjs
+      - name: Check out JavaScript SDK compatibility tests
+        uses: actions/checkout@v6
+        with:
+          repository: xviidev/pixerve-js
+          ref: ad825ce2d2b077bd41e54a1c5e01524b74efd7e3
+          path: target/pixerve-js
+          persist-credentials: false
+      - name: Verify SDK compatibility with the release executable
+        run: |
+          npm ci --prefix target/pixerve-js
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          $env:PIXERVE_BIN = Join-Path $env:GITHUB_WORKSPACE 'target/release/pixerve.exe'
+          npm --prefix target/pixerve-js run test:parity
       - name: Package and test extracted ZIP without SDK paths
         run: |
           ./scripts/package-windows.ps1 -VipsDir $env:VIPS_SDK
@@ -70,6 +100,16 @@ jobs:
             dist/*.zip
             dist/*.sha256
           if-no-files-found: error
+
+      - name: Attach Windows package to the release
+        if: github.event_name == 'release' && github.event.action == 'published'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          $windowsAssets = @(Get-ChildItem dist -File | Where-Object { $_.Name -match '\.zip(\.sha256)?$' } | ForEach-Object FullName)
+          if ($windowsAssets.Count -ne 2) { throw 'Expected one Windows ZIP and its SHA-256 checksum' }
+          gh release upload $env:RELEASE_TAG @windowsAssets --repo $env:GITHUB_REPOSITORY --clobber
 
   linux:
     runs-on: ubuntu-24.04
@@ -96,8 +136,21 @@ jobs:
           cargo fmt --check
           cargo test --locked -j 2
           cargo build --release --locked -j 2
-          npm ci
+          npm ci --workspaces=false
           node scripts/smoke.mjs
+      - name: Check out JavaScript SDK compatibility tests
+        uses: actions/checkout@v6
+        with:
+          repository: xviidev/pixerve-js
+          ref: ad825ce2d2b077bd41e54a1c5e01524b74efd7e3
+          path: target/pixerve-js
+          persist-credentials: false
+      - name: Verify SDK compatibility with the release executable
+        env:
+          PIXERVE_BIN: ${{ github.workspace }}/target/release/pixerve
+        run: |
+          npm ci --prefix target/pixerve-js
+          npm --prefix target/pixerve-js run test:parity
       - name: Build and inspect Linux x64 container
         env:
           IMAGE_SOURCE: ${{ github.server_url }}/${{ github.repository }}
@@ -130,7 +183,7 @@ jobs:
   ghcr:
     name: Publish tested release image to GHCR
     if: github.event_name == 'release' && github.event.action == 'published'
-    needs: [windows, linux]
+    needs: [windows, linux, javascript]
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:

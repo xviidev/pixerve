@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 
 const root = new URL('../', import.meta.url);
 const sizes = [16, 32, 48, 256];
-const frames = await Promise.all(sizes.map(size => sharp(fileURLToPath(new URL('static/pixerve-icon.png', root)))
+const frames = await Promise.all(sizes.map(size => sharp(fileURLToPath(new URL('assets/pixerve-icon.png', root)))
   .resize(size, size).png().toBuffer()));
 const directory = Buffer.alloc(6 + sizes.length * 16);
 directory.writeUInt16LE(1, 2);
@@ -21,5 +21,5 @@ for (let i = 0; i < sizes.length; i++) {
   directory.writeUInt32LE(offset, entry + 12);
   offset += frames[i].length;
 }
-await writeFile(new URL('static/favicon.ico', root), Buffer.concat([directory, ...frames]));
-console.log('Generated static/favicon.ico (16, 32, 48, 256 px).');
+await writeFile(new URL('assets/favicon.ico', root), Buffer.concat([directory, ...frames]));
+console.log('Generated assets/favicon.ico (16, 32, 48, 256 px).');
